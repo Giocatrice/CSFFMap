@@ -3,23 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interaktiv Spelkarta med Zoom & Knappar</title>
+    <title>Gio's Interactive CSFF Map</title>
     <style>
         body, html {
             margin: 0; padding: 0;
             height: 100%; overflow: hidden;
             background-color: #121212;
             user-select: none;
-            font-family: sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
-        /* Behållaren */
+        /* Behållaren för kartan */
         #viewport {
             width: 100vw;
             height: 100vh;
             position: relative;
             cursor: grab;
             overflow: hidden;
+            background-image: radial-gradient(#222 1px, transparent 1px); /* Subtilt rutmönster */
+            background-size: 20px 20px;
         }
 
         #viewport:active { cursor: grabbing; }
@@ -32,85 +34,114 @@
             display: block;
         }
 
-        /* UI-Kontroller (Knappar + Index) */
-        #ui-layer {
+        /* Nytt UI-lager: Sidopanel */
+        #ui-panel {
             position: fixed;
-            bottom: 25px;
-            right: 25px;
+            top: 0;
+            right: 0;
+            width: 320px; /* Bredden på ditt index-lager */
+            height: 100vh;
+            background: rgba(20, 20, 20, 0.95);
+            border-left: 3px solid #daa520;
+            box-shadow: -10px 0 30px rgba(0,0,0,0.7);
             z-index: 1000;
             display: flex;
             flex-direction: column;
-            align-items: flex-end;
-            gap: 15px;
+            pointer-events: auto; /* Man kan klicka på panelen */
         }
 
-        /* Zoom-knappar styling */
-        .controls {
+        .index-header {
+            color: #daa520;
+            font-size: 18px;
+            text-align: center;
+            padding: 20px 10px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #444;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-weight: bold;
+        }
+
+        .index-content {
+            flex-grow: 1;
+            overflow-y: auto; /* Om index-bilden är väldigt lång kan man scrolla i panelen */
+            padding: 10px;
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            align-items: center;
+        }
+
+        #index-img {
+            width: 100%;
+            height: auto;
+            border: 1px solid #333;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+        }
+
+        /* Zoom-knappar placerade utanför panelen (till vänster om den) */
+        .controls {
+            position: absolute;
+            left: -60px;
+            top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: auto;
         }
 
         .btn {
             width: 45px;
             height: 45px;
-            background: #252525;
+            background: #1a1a1a;
             color: #daa520;
-            border: 2px solid #444;
+            border: 2px solid #daa520;
             border-radius: 8px;
-            font-size: 24px;
+            font-size: 20px;
             font-weight: bold;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
             box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-            transition: background 0.2s;
+            transition: all 0.2s;
         }
 
-        .btn:hover { background: #333; border-color: #daa520; }
-        .btn:active { background: #daa520; color: #111; }
+        .btn:hover { background: #daa520; color: #111; }
+        .btn:active { transform: scale(0.9); }
 
-        /* Index-overlay styling */
-        #index-box {
-            width: 250px;
-            border: 3px solid #444;
-            border-radius: 10px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.9);
-            background: #1a1a1a;
-            overflow: hidden;
-            pointer-events: auto; /* Gör att man kan klicka på indexet om man vill */
-        }
-
-        .index-header {
-            color: #daa520;
-            font-size: 14px;
+        .info-text {
+            color: #888;
+            font-size: 12px;
+            padding: 15px;
             text-align: center;
-            padding: 8px;
-            background: #252525;
-            border-bottom: 1px solid #444;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            line-height: 1.4;
         }
     </style>
 </head>
 <body>
 
-    <!-- UI Lager: Knappar och Index -->
-    <div id="ui-layer">
+    <!-- UI Panel (Top Layer) -->
+    <div id="ui-panel">
         <div class="controls">
             <button class="btn" onclick="zoom(0.2)" title="Zooma in">+</button>
             <button class="btn" onclick="zoom(-0.2)" title="Zooma ut">−</button>
-            <button class="btn" onclick="resetMap()" title="Återställ vy" style="font-size: 18px;">🏠</button>
+            <button class="btn" onclick="resetMap()" title="Återställ vy">🏠</button>
         </div>
 
-        <div id="index-box">
-            <div class="index-header">Kart-Index</div>
-            <img src="CardforestMapIndex.png" style="width: 100%; display: block;" alt="Index">
+        <div class="index-header">Kart-Index</div>
+        
+        <div class="index-content">
+            <!-- Din index-bild här -->
+            <img id="index-img" src="CardforestMapIndex.png" alt="Index">
+            
+            <div class="info-text">
+                Dra för att panorera<br>
+                Scrolla för att zooma
+            </div>
         </div>
     </div>
 
-    <!-- Kartan -->
+    <!-- Kart-området -->
     <div id="viewport">
         <img id="map" src="BestMapYet.jpg" alt="Spelkarta">
     </div>
@@ -118,24 +149,23 @@
     <script>
         const viewport = document.getElementById('viewport');
         const map = document.getElementById('map');
+        const uiPanel = document.getElementById('ui-panel');
 
         let scale = 1;
-        let pos = { x: 50, y: 50 }; // Startposition
+        let pos = { x: 50, y: 50 };
         let isDragging = false;
         let start = { x: 0, y: 0 };
 
-        // Uppdatera kartans läge
         function update() {
             map.style.transform = `translate(${pos.x}px, ${pos.y}px) scale(${scale})`;
         }
 
-        // --- KNAPP-ZOOM ---
         function zoom(delta) {
             const oldScale = scale;
             scale = Math.min(Math.max(0.1, scale + delta), 5);
             
-            // Justera positionen så vi zoomar mot mitten av skärmen
-            const centerX = window.innerWidth / 2;
+            // Zoomar mot mitten av den synliga kartytan (vänster om panelen)
+            const centerX = (window.innerWidth - 320) / 2;
             const centerY = window.innerHeight / 2;
             
             pos.x = centerX - (centerX - pos.x) * (scale / oldScale);
@@ -145,21 +175,21 @@
         }
 
         function resetMap() {
-            scale = 1;
+            scale = 0.8; // Lite utzoomat för att se mer direkt
             pos = { x: 50, y: 50 };
             update();
         }
 
-        // --- MUS-ZOOM (Scroll) ---
         viewport.onwheel = (e) => {
             e.preventDefault();
-            const delta = -Math.sign(e.deltaY) * 0.15;
+            const delta = -Math.sign(e.deltaY) * 0.2;
             zoom(delta);
         };
 
-        // --- DRAG-FUNKTION ---
         viewport.onmousedown = (e) => {
-            if(e.target.closest('#ui-layer')) return; // Hindra drag om man klickar på UI
+            // Hindra drag om man klickar på panelen eller dess knappar
+            if (uiPanel.contains(e.target)) return;
+            
             isDragging = true;
             start = { x: e.clientX - pos.x, y: e.clientY - pos.y };
         };
@@ -173,7 +203,7 @@
 
         window.onmouseup = () => isDragging = false;
 
-        // Starta med en uppdatering
+        // Initiera kartan
         update();
     </script>
 
